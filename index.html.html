@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>성북 도보 길찾기</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+:root{--bg:#f6f7f5;--card:#fff;--ink:#1d2b26;--sub:#5b6b64;--line:#dfe4e0;--pri:#1f6f54;--priInk:#fff;--warn:#fff4d6}
+@media (prefers-color-scheme:dark){:root{--bg:#121816;--card:#1b2420;--ink:#e8eeea;--sub:#9fb0a8;--line:#2c3833;--pri:#47b58a;--priInk:#0c1511;--warn:#3a3217}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;line-height:1.45}
+.wrap{max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:4px 0 12px}
+button,a.btn{font:inherit;border:0;border-radius:10px;padding:12px 14px;background:var(--pri);color:var(--priInk);font-weight:700;text-decoration:none;cursor:pointer;display:inline-block;text-align:center}
+a.btn.sub,button.sub{background:transparent;color:var(--pri);border:1px solid var(--pri)}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.bar input{flex:1;min-width:140px;font:inherit;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink)}
+details{margin:0 0 10px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}summary{cursor:pointer;font-weight:700}
+#status{font-size:14px;color:var(--sub);margin:6px 0 10px}
+.notice{background:var(--warn);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+#routebox{display:none;margin-bottom:14px}
+#map{height:320px;border-radius:12px;border:1px solid var(--line)}
+#sum{font-weight:700;margin:8px 0 4px}
+#steps{font-size:13px;color:var(--sub);margin:0;padding-left:18px;max-height:140px;overflow:auto}
+ul.list{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+ul.list>li{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+.nm{font-weight:700}.ad{font-size:13px;color:var(--sub)}.ds{font-size:13px;color:var(--pri);font-weight:700}
+.info{min-width:0}.btns{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+@media (max-width:420px){ul.list>li{flex-direction:column;align-items:stretch}.btns{justify-content:stretch}.btns>*{flex:1}}
+</style></head><body><div class="wrap">
+<h1>성북 도보 길찾기</h1>
+<div class="bar">
+  <button id="loc">내 위치에서 가까운 순</button>
+  <input id="q" type="search" placeholder="장소 검색" aria-label="장소 검색">
+</div>
+<details id="keybox"><summary>티맵 앱 키 설정</summary>
+  <div class="bar" style="margin-top:8px">
+    <input id="keyin" type="password" placeholder="티맵 앱 키 붙여 넣기" autocomplete="off" aria-label="티맵 앱 키">
+    <button id="keysave" class="sub">저장</button><button id="keyclr" class="sub">지우기</button>
+  </div>
+  <div class="ad">이 휴대폰의 브라우저에만 저장되고 파일에는 들어가지 않습니다.</div>
+</details>
+<div id="status">위치를 허용하면 가까운 곳부터 보여줍니다.</div>
+<div class="notice">좌표는 주소 기준이라 실제 입구와 몇십 m 다를 수 있습니다. 목록의 거리는 직선거리입니다. 경로는 티맵 도보 경로입니다.</div>
+<div id="routebox"><div id="map"></div><div id="sum"></div><ol id="steps"></ol></div>
+<ul class="list" id="list"></ul>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+let KEY = "";
+try{ KEY = localStorage.getItem("tmapKey") || "" }catch(e){}
+const PLACES = [{"name": "최순우 옛집", "addr": "성북구 성북로15길 9", "lat": 37.592907, "lon": 127.000358}, {"name": "간송미술관", "addr": "성북구 성북로 102-11", "lat": 37.594513, "lon": 126.996604}, {"name": "성북구립미술관", "addr": "성북구 성북로 134", "lat": 37.594806, "lon": 126.994884}, {"name": "수연산방(이태준 가옥)", "addr": "성북구 성북로26길 8", "lat": 37.595044, "lon": 126.994745}, {"name": "성북선잠박물관", "addr": "성북구 성북로 96", "lat": 37.59318, "lon": 126.998092}, {"name": "심우장", "addr": "성북구 성북로29길 24", "lat": 37.593621, "lon": 126.991699}, {"name": "북정마을", "addr": "성북구 성북로23길 87", "lat": 37.592637, "lon": 126.99246}, {"name": "낙산공원 성곽길 (삼선동 시작점)", "addr": "성북구 삼선동1가 1", "lat": 37.587541, "lon": 127.00435}, {"name": "길상사", "addr": "성북구 선잠로5길 68", "lat": 37.598702, "lon": 126.99345}, {"name": "성북동 이종석 별장", "addr": "성북구 성북로 131", "lat": 37.594247, "lon": 126.994643}, {"name": "우리옛돌박물관", "addr": "성북구 대사관로13길 66", "lat": 37.600859, "lon": 126.989679}, {"name": "한국가구박물관", "addr": "성북구 대사관로 121", "lat": 37.600044, "lon": 126.993049}, {"name": "삼청각", "addr": "성북구 대사관로 3", "lat": 37.597144, "lon": 126.984322}, {"name": "한국순교복자성직수도회 구 본원", "addr": "성북구 성북로24길 3", "lat": 37.594759, "lon": 126.995418}, {"name": "장교동 한규설 가옥", "addr": "성북구 정릉로9길 68", "lat": 37.611098, "lon": 127.000201}, {"name": "서울 동선동 권진규 아틀리에", "addr": "성북구 동소문로26마길 2-15", "lat": 37.593843, "lon": 127.021436}, {"name": "혜화문", "addr": "종로구 창경궁로 307", "lat": 37.587925, "lon": 127.003487}, {"name": "성북근현대문학관", "addr": "성북구 성북로21길 24", "lat": 37.592457, "lon": 126.997035}, {"name": "성북구립 최만린미술관", "addr": "성북구 솔샘로7길 23", "lat": 37.610673, "lon": 127.004322}, {"name": "성북예술창작터", "addr": "성북구 성북로 23", "lat": 37.59005, "lon": 127.00412}, {"name": "정법사", "addr": "성북구 대사관로13길 44", "lat": 37.60167, "lon": 126.990886}, {"name": "정릉", "addr": "성북구 아리랑로19길 116", "lat": 37.601215, "lon": 127.006821}, {"name": "경국사", "addr": "성북구 보국문로 113-10", "lat": 37.614673, "lon": 127.004918}, {"name": "북한산 정릉탐방로", "addr": "성북구 보국문로 262", "lat": 37.624239, "lon": 126.990121}, {"name": "흥천사", "addr": "성북구 흥천사길 29", "lat": 37.59823, "lon": 127.009157}, {"name": "봉국사", "addr": "성북구 정릉로 202", "lat": 37.605246, "lon": 127.005984}, {"name": "보문사", "addr": "성북구 보문사길 20", "lat": 37.584671, "lon": 127.016097}, {"name": "의릉", "addr": "성북구 화랑로32길 146-20", "lat": 37.603799, "lon": 127.055863}, {"name": "의릉 역사문화관", "addr": "성북구 화랑로32길 146-37", "lat": 37.603799, "lon": 127.055863}, {"name": "한국예술종합학교", "addr": "성북구 화랑로32길 146-37", "lat": 37.603799, "lon": 127.055863}, {"name": "성북역사문화센터", "addr": "성북구 성북로21길 31", "lat": 37.592657, "lon": 126.997024}, {"name": "성북 예향재", "addr": "성북구 성북로31길 97", "lat": 37.593891, "lon": 126.988634}, {"name": "김중업 건축문화의 집", "addr": "성북구 장위로21나길 11", "lat": 37.614982, "lon": 127.044088}, {"name": "문화공간 이육사", "addr": "성북구 종암로21가길 36-1", "lat": 37.598139, "lon": 127.03262}, {"name": "돈암동 성당", "addr": "성북구 고려대로7길 120", "lat": 37.590271, "lon": 127.017492}, {"name": "오동근린공원", "addr": "성북구 화랑로13가길 100", "lat": 37.609579, "lon": 127.041502}];
+let me = null, map = null, layer = null;
+const $ = id => document.getElementById(id);
+function rad(x){return x*Math.PI/180}
+function dist(a,b,c,d){const R=6371000,dLa=rad(c-a),dLo=rad(d-b);
+  const h=Math.sin(dLa/2)**2+Math.cos(rad(a))*Math.cos(rad(c))*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));}
+function fmt(m){return m<1000?Math.round(m/10)*10+" m":(m/1000).toFixed(1)+" km"}
+
+async function showRoute(p){
+  const st=$("status");
+  if(!me){st.textContent="먼저 '내 위치에서 가까운 순' 버튼으로 현재 위치를 허용해 주세요.";return}
+  if(!KEY){st.textContent="위의 '티맵 앱 키 설정'에서 앱 키를 먼저 저장해 주세요.";$("keybox").open=true;return}
+  st.textContent=p.name+" 경로를 불러오는 중...";
+  try{
+    const res=await fetch("https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1",{
+      method:"POST",
+      headers:{"appKey":KEY,"Content-Type":"application/json","Accept":"application/json"},
+      body:JSON.stringify({startX:me.lon,startY:me.lat,endX:p.lon,endY:p.lat,
+        reqCoordType:"WGS84GEO",resCoordType:"WGS84GEO",
+        startName:encodeURIComponent("내 위치"),endName:encodeURIComponent(p.name)})
+    });
+    if(!res.ok){throw new Error("HTTP "+res.status+" "+(await res.text()).slice(0,120))}
+    const j=await res.json();
+    const feats=j.features||[];
+    const line=[]; const steps=[];
+    for(const f of feats){
+      if(f.geometry.type==="LineString"){for(const c of f.geometry.coordinates)line.push([c[1],c[0]])}
+      else if(f.geometry.type==="Point"&&f.properties&&f.properties.description){steps.push(f.properties.description)}
+    }
+    if(!line.length)throw new Error("경로 좌표가 없습니다.");
+    const pr=(feats[0]&&feats[0].properties)||{};
+    $("routebox").style.display="block";
+    if(!map){map=L.map("map");L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map)}
+    if(layer)layer.remove();
+    layer=L.layerGroup([L.polyline(line,{weight:5,color:"#1f6f54"}),L.marker([me.lat,me.lon]).bindTooltip("내 위치"),L.marker([p.lat,p.lon]).bindTooltip(p.name)]).addTo(map);
+    map.invalidateSize(); map.fitBounds(L.polyline(line).getBounds(),{padding:[20,20]});
+    $("sum").textContent=p.name+" · "+(pr.totalDistance!=null?fmt(pr.totalDistance):"")+(pr.totalTime!=null?" · 약 "+Math.round(pr.totalTime/60)+"분":"");
+    const ol=$("steps"); ol.textContent=""; for(const s of steps){const li=document.createElement("li");li.textContent=s;ol.append(li)}
+    st.textContent="티맵 도보 경로입니다.";
+    $("routebox").scrollIntoView({behavior:"smooth",block:"start"});
+  }catch(e){st.textContent="경로를 불러오지 못했습니다: "+e.message+" (키가 맞는지, 보행자 경로 상품을 이 앱에 연결했는지 확인하세요.)"}
+}
+
+function render(){
+  const q=$("q").value.trim();
+  let arr=PLACES.map(p=>({...p,d:me?dist(me.lat,me.lon,p.lat,p.lon):null}));
+  if(q) arr=arr.filter(p=>(p.name+p.addr).includes(q));
+  if(me) arr.sort((a,b)=>a.d-b.d);
+  const ul=$("list"); ul.textContent="";
+  for(const p of arr){
+    const li=document.createElement("li");
+    const info=document.createElement("div"); info.className="info";
+    const n=document.createElement("div"); n.className="nm"; n.textContent=p.name;
+    const a=document.createElement("div"); a.className="ad"; a.textContent=p.addr;
+    info.append(n,a);
+    if(p.d!=null){const d=document.createElement("div"); d.className="ds"; d.textContent="직선 "+fmt(p.d); info.append(d)}
+    const btns=document.createElement("div"); btns.className="btns";
+    const r=document.createElement("button"); r.textContent="경로 보기"; r.addEventListener("click",()=>showRoute(p)); btns.append(r);
+    li.append(info,btns); ul.append(li);
+  }
+  if(!arr.length){ul.innerHTML='<li>검색 결과가 없습니다.</li>'}
+}
+$("q").addEventListener("input",render);
+$("loc").addEventListener("click",()=>{
+  const st=$("status");
+  if(!navigator.geolocation){st.textContent="이 브라우저는 위치 기능을 지원하지 않습니다.";return}
+  st.textContent="위치 확인 중...";
+  navigator.geolocation.getCurrentPosition(pos=>{
+    me={lat:pos.coords.latitude,lon:pos.coords.longitude};
+    st.textContent="내 위치 기준 가까운 순입니다. (정확도 약 "+Math.round(pos.coords.accuracy)+" m)";
+    render();
+  },err=>{
+    st.textContent=err.code===1?"위치 권한이 거부되었습니다. 주소창의 사이트 설정에서 허용해 주세요. 위치 없이도 전체 목록은 볼 수 있습니다.":"위치를 가져오지 못했습니다. HTTPS 주소(예: GitHub Pages)에서 열었는지 확인해 주세요.";
+  },{enableHighAccuracy:true,timeout:10000,maximumAge:30000});
+});
+$("keysave").addEventListener("click",()=>{
+  const v=$("keyin").value.trim(); if(!v){$("status").textContent="앱 키를 입력해 주세요.";return}
+  KEY=v; try{localStorage.setItem("tmapKey",v)}catch(e){}
+  $("keyin").value=""; $("keybox").open=false; $("status").textContent="앱 키를 저장했습니다.";
+});
+$("keyclr").addEventListener("click",()=>{KEY="";try{localStorage.removeItem("tmapKey")}catch(e){}$("status").textContent="앱 키를 지웠습니다."});
+if(!KEY){$("keybox").open=true}
+render();
+</script></body></html>
